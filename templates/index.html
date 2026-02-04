@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toronto Weekend Activity Finder</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="background-overlay"></div>
+    
+    <div class="container">
+        <header>
+            <h1>🍁 Toronto Activity Finder</h1>
+            <p class="subtitle">Discover amazing things to do in the Greater Toronto Area</p>
+        </header>
+
+        <main>
+            <div class="search-section">
+                <form id="searchForm">
+                    <div class="form-group">
+                        <label for="query">What are you looking for?</label>
+                        <input 
+                            type="text" 
+                            id="query" 
+                            name="query" 
+                            placeholder="e.g., museums, outdoor activities, restaurants..."
+                            required
+                        >
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="date">Date (optional)</label>
+                        <input 
+                            type="date" 
+                            id="date" 
+                            name="date"
+                        >
+                    </div>
+                    
+                    <button type="submit" class="search-btn">
+                        <span class="btn-text">Search Activities</span>
+                        <span class="btn-loading" style="display: none;">Searching...</span>
+                    </button>
+                </form>
+            </div>
+
+            <div id="results-section" style="display: none;">
+                <div class="results-header">
+                    <h2>Search Results</h2>
+                    <p id="results-count"></p>
+                </div>
+                
+                <div id="results-container" class="results-grid">
+                    <!-- Results will be inserted here -->
+                </div>
+            </div>
+
+            <div id="error-message" class="error-message" style="display: none;"></div>
+        </main>
+    </div>
+
+    <script>
+        const searchForm = document.getElementById('searchForm');
+        const resultsSection = document.getElementById('results-section');
+        const resultsContainer = document.getElementById('results-container');
+        const resultsCount = document.getElementById('results-count');
+        const errorMessage = document.getElementById('error-message');
+        const searchBtn = searchForm.querySelector('.search-btn');
+        const btnText = searchBtn.querySelector('.btn-text');
+        const btnLoading = searchBtn.querySelector('.btn-loading');
+
+        searchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Clear previous results and errors
+            resultsSection.style.display = 'none';
+            errorMessage.style.display = 'none';
+            resultsContainer.innerHTML = '';
+            
+            // Show loading state
+            searchBtn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoading.style.display = 'inline';
+            
+            try {
+                const formData = new FormData(searchForm);
+                
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data.activities, data.count);
+                } else {
+                    showError(data.error || 'An error occurred while searching.');
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                showError('Failed to connect to the server. Please try again.');
+            } finally {
+                // Reset button state
+                searchBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoading.style.display = 'none';
+            }
+        });
+
+        function displayResults(activities, count) {
+            if (count === 0) {
+                showError('No activities found. Try a different search term.');
+                return;
+            }
+            
+            resultsCount.textContent = `Found ${count} ${count === 1 ? 'activity' : 'activities'}`;
+            resultsSection.style.display = 'block';
+            
+            activities.forEach(activity => {
+                const card = createActivityCard(activity);
+                resultsContainer.appendChild(card);
+            });
+        }
+
+        function createActivityCard(activity) {
+            const card = document.createElement('div');
+            card.className = 'activity-card';
+            
+            const imageUrl = activity.images && activity.images.length > 0 
+                ? activity.images[0] 
+                : 'https://images.unsplash.com/photo-1517935706615-2717063c2225?w=400';
+            
+            card.innerHTML = `
+                <div class="card-image" style="background-image: url('${imageUrl}')"></div>
+                <div class="card-content">
+                    <h3 class="card-title">${escapeHtml(activity.title)}</h3>
+                    <p class="card-description">${escapeHtml(activity.description)}</p>
+                    <div class="card-meta">
+                        <span class="card-location">📍 ${escapeHtml(activity.location)}</span>
+                        ${activity.date ? `<span class="card-date">📅 ${escapeHtml(activity.date)}</span>` : ''}
+                    </div>
+                    <div class="card-footer">
+                        <span class="card-source">Source: ${escapeHtml(activity.source_site)}</span>
+                        <a href="#" class="card-link" data-url="${escapeHtml(activity.source_url)}">
+                            View Details →
+                        </a>
+                    </div>
+                </div>
+            `;
+            
+            // Add click handler for the View Details link
+            const detailsLink = card.querySelector('.card-link');
+            detailsLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                const url = detailsLink.getAttribute('data-url');
+                openPopup(url);
+            });
+            
+            return card;
+        }
+
+        function openPopup(url) {
+            // Open popup window with specific dimensions
+            const width = 900;
+            const height = 700;
+            const left = (screen.width - width) / 2;
+            const top = (screen.height - height) / 2;
+            
+            const popup = window.open(
+                url,
+                'ActivityDetails',
+                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=yes,status=yes`
+            );
+            
+            if (popup) {
+                popup.focus();
+            } else {
+                // Fallback if popup is blocked
+                alert('Please allow popups for this site to view activity details, or try right-clicking the link and selecting "Open in New Tab"');
+                window.open(url, '_blank');
+            }
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
